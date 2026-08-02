@@ -1,12 +1,8 @@
 class FCLQuoteCalculator:
     """
-    OceanQuote AI
-    Version 0.4.0
+    AIT SmartQuote
+    Version 0.4.1
     """
-
-    SIZE_20 = "C02"
-    SIZE_40 = "C03"
-    SIZE_40HC = "C04"
 
     def _to_float(self, value):
 
@@ -23,55 +19,91 @@ class FCLQuoteCalculator:
         except:
             return 0
 
-    def calculate(self, rows, exchange_rate=160):
+    def _add_row(self, result, row, exchange_rate):
 
-        result = {
-            "20FT": {"usd": 0, "jpy": 0},
-            "40FT": {"usd": 0, "jpy": 0}
-        }
+        currency = row.get("請求項目通貨CD", "")
 
-        for row in rows:
+        price = self._to_float(
+            row.get("請求項目単価")
+        )
 
-            unit = row.get("請求項目単位CD", "")
+        if currency == "USD":
+            result["usd"] += price
+        else:
+            result["jpy"] += price
 
-            if unit == self.SIZE_20:
-                target = "20FT"
+        # Charge1～20
+        for i in range(1, 21):
 
-            elif unit in [self.SIZE_40, self.SIZE_40HC]:
-                target = "40FT"
-
-            else:
-                continue
-
-            # Ocean Freight
-            currency = row.get("請求項目通貨CD", "")
+            currency = row.get(
+                f"Charge通貨単位CD{i}",
+                ""
+            )
 
             price = self._to_float(
-                row.get("請求項目単価")
+                row.get(f"Charge単価{i}")
             )
 
             if currency == "USD":
-                result[target]["usd"] += price
+                result["usd"] += price
             else:
-                result[target]["jpy"] += price
+                result["jpy"] += price
 
-            # Charge1～20
-            for i in range(1, 21):
+    def calculate(
+        self,
+        quote,
+        exchange_rate=160
+    ):
 
-                currency = row.get(
-                    f"Charge通貨単位CD{i}",
-                    ""
-                )
+        result = {
+            "20FT": {
+                "usd": 0,
+                "jpy": 0
+            },
+            "40FT": {
+                "usd": 0,
+                "jpy": 0
+            }
+        }
 
-                price = self._to_float(
-                    row.get(f"Charge単価{i}")
-                )
+        # 20FT
+        for row in quote["20FT"]:
+            self._add_row(
+                result["20FT"],
+                row,
+                exchange_rate
+            )
 
-                if currency == "USD":
-                    result[target]["usd"] += price
+        # 40FT
+        for row in quote["40FT"]:
+            self._add_row(
+                result["40FT"],
+                row,
+                exchange_rate
+            )
 
-                else:
-                    result[target]["jpy"] += price
+        # 40HCは40FTへ加算
+        for row in quote["40HC"]:
+            self._add_row(
+                result["40FT"],
+                row,
+                exchange_rate
+            )
+
+        # BL料金を両方へ加算
+        for row in quote["BL"]:
+
+            self._add_row(
+                result["20FT"],
+                row,
+                exchange_rate
+            )
+
+            self._add_row(
+                result["40FT"],
+                row,
+                exchange_rate
+            )
 
         for size in result:
 

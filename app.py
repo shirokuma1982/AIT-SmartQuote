@@ -2,7 +2,9 @@ from flask import Flask, render_template, request
 
 from modules.csv_reader import CSVReader
 from modules.search_engine import SearchEngine
-from modules.quote_calculator import QuoteCalculator
+from modules.quote_builder import QuoteBuilder
+from modules.fcl_quote_calculator import FCLQuoteCalculator
+from modules.data_dictionary import SHIPPER
 
 app = Flask(__name__)
 
@@ -17,16 +19,21 @@ def index():
     # 検索条件
     shipper = request.args.get("shipper", "").strip()
 
-    # 為替（デフォルト160）
-    exchange_rate = float(
-        request.args.get("exchange_rate", "160")
-    )
+    # 為替
+    try:
+        exchange_rate = float(request.args.get("exchange_rate", "160"))
+        if exchange_rate <= 0:
+            raise ValueError
+    except (TypeError, ValueError):
+        exchange_rate = 160.0
 
     results = []
     quote = None
+    quote_info = None
 
     if shipper:
 
+        # 検索
         engine = SearchEngine()
 
         results = engine.search(
@@ -34,25 +41,50 @@ def index():
             shipper=shipper
         )
 
-        calculator = QuoteCalculator()
+        # 見積単位へ整理
+        builder = QuoteBuilder()
+
+        grouped_quote = builder.build(results)
+
+        # FCL試算
+        calculator = FCLQuoteCalculator()
 
         quote = calculator.calculate(
-            rows=results,
-            exchange_rate=exchange_rate
+            grouped_quote,
+            exchange_rate
         )
+
+        if results:
+            first_result = results[0]
+            quote_info = {
+                "shipper": first_result.get(SHIPPER, ""),
+                "pol": first_result.get("PlaceofReceiptCD", ""),
+                "pod": first_result.get("PlaceofDeliveryCD", ""),
+                "carrier": first_result.get("CarrierCD", "")
+            }
 
         print("=" * 60)
         print(f"検索条件：{shipper}")
-        print(f"検索結果：{len(results)} 件")
-        print(f"JPY合計：{quote['jpy']:,.0f}")
-        print(f"USD合計：{quote['usd']:,.2f}")
-        print(f"総額：{quote['grand_total']:,.0f}")
+        print(f"検索件数：{len(results)}")
+
+        print()
+
+        print("20FT")
+        print(quote["20FT"])
+
+        print()
+
+        print("40FT")
+        print(quote["40FT"])
+
         print("=" * 60)
 
     return render_template(
         "index.html",
         results=results,
         quote=quote,
+        quote_info=quote_info,
+        shipper=shipper,
         exchange_rate=exchange_rate
     )
 
